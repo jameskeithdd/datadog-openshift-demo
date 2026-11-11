@@ -1,0 +1,5 @@
+# Used by test/kind. On OpenShift, scripts/deploy.sh applies the files directly.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - datadog-agent.yaml

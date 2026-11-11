@@ -1,0 +1,30 @@
+# Test only. Clusters without Red Hat's certified-operators catalog (for
+# example upstream MicroShift built on OKD) get the same Datadog Operator
+# bundle from the public OperatorHub.io catalog instead. Same version, same
+# datadog-agent-scc ServiceAccount and SCC permissions; the Operator image comes
+# from gcr.io instead of registry.connect.redhat.com.
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: operatorhubio-catalog
+  namespace: openshift-marketplace
+spec:
+  sourceType: grpc
+  image: quay.io/operatorhubio/catalog:latest
+  displayName: OperatorHub.io
+  publisher: OperatorHub.io
+  updateStrategy:
+    registryPoll:
+      interval: 60m
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: datadog-operator
+  namespace: openshift-operators
+spec:
+  name: datadog-operator
+  channel: stable
+  source: operatorhubio-catalog
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic

@@ -1,0 +1,33 @@
+# The demo app as deployed on OpenShift, plus what OpenShift's restricted-v2
+# SCC would do to each pod: run as an arbitrary non-root UID in group 0.
+# Pod Security "restricted" is enforced on the namespace so any manifest that
+# would fail OpenShift's restrictions fails here too.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../app
+images:
+  - name: ghcr.io/jameskeithdd/datadog-openshift-demo/catalog
+    newName: datadog-demo-catalog
+    newTag: dev
+patches:
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/securityContext/runAsUser
+        value: 1000680000
+      - op: add
+        path: /spec/template/spec/securityContext/runAsGroup
+        value: 0
+      - op: add
+        path: /spec/template/spec/securityContext/fsGroup
+        value: 1000680000
+  - target:
+      kind: Namespace
+      name: datadog-demo
+    patch: |-
+      - op: add
+        path: /metadata/labels
+        value:
+          pod-security.kubernetes.io/enforce: restricted

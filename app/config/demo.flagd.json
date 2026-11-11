@@ -1,0 +1,41 @@
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "adFailure": {
+      "description": "Ad service returns UNAVAILABLE on ~10% of GetAds calls",
+      "state": "ENABLED",
+      "variants": { "on": true, "off": false },
+      "defaultVariant": "off"
+    },
+    "adHighCpu": {
+      "description": "Ad service burns CPU on every request",
+      "state": "ENABLED",
+      "variants": { "on": true, "off": false },
+      "defaultVariant": "off"
+    },
+    "adManualGc": {
+      "description": "Ad service triggers full manual garbage collections",
+      "state": "ENABLED",
+      "variants": { "on": true, "off": false },
+      "defaultVariant": "off"
+    },
+    "recommendationCacheFailure": {
+      "description": "Recommendation service leaks memory through a broken cache",
+      "state": "ENABLED",
+      "variants": { "on": true, "off": false },
+      "defaultVariant": "off"
+    },
+    "productCatalogFailure": {
+      "description": "Catalog GetProduct fails for product OLJCESPC7Z",
+      "state": "ENABLED",
+      "variants": { "on": true, "off": false },
+      "defaultVariant": "off"
+    },
+    "productCatalogLockContention": {
+      "description": "Catalog holds an exclusive table lock for 30s at a time (visible in Database Monitoring)",
+      "state": "ENABLED",
+      "variants": { "on": true, "off": false },
+      "defaultVariant": "off"
+    }
+  }
+}

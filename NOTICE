@@ -1,0 +1,13 @@
+Datadog on OpenShift: microservices demo
+
+This project includes material derived from the OpenTelemetry Demo
+(https://github.com/open-telemetry/opentelemetry-demo), Copyright The
+OpenTelemetry Authors, licensed under the Apache License, Version 2.0:
+
+  - src/catalog/demo.proto (unmodified copy of pb/demo.proto)
+  - app/config/init-db.sh (product data from src/postgresql/init.sql)
+  - app/config/demo.flagd.json (subset of src/flagd/demo.flagd.json)
+  - app/config/locustfile.py (adapted from src/load-generator/locustfile.py)
+
+Container images for frontend, ad and recommendation are the unmodified
+upstream OpenTelemetry Demo 3.1.0 images.

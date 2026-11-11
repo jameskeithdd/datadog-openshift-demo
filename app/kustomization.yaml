@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: datadog-demo
+resources:
+  - namespace.yaml
+  - infrastructure.yaml
+  - services.yaml
+configMapGenerator:
+  - name: flagd-config
+    files:
+      - config/demo.flagd.json
+  - name: postgres-init
+    files:
+      - config/init-db.sh
+  - name: load-generator
+    files:
+      - config/locustfile.py
+  - name: frontend-tracing-bridge
+    files:
+      - config/register-datadog-tracer.js
+generatorOptions:
+  # Stable names: scripts/flag.sh edits flagd-config in place, and flagd
+  # picks up the change without a pod restart.
+  disableNameSuffixHash: true
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: datadog-demo
+patches:
+  # Without this, Kubernetes injects <SERVICE>_PORT=tcp://... variables for
+  # every Service. flagd treats FLAGD_PORT as its own listen port and ends up
+  # on a random one.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/enableServiceLinks
+        value: false
+images:
+  - name: catalog
+    newName: ghcr.io/jameskeithdd/datadog-openshift-demo/catalog
+    newTag: 1.0.0

@@ -1,0 +1,159 @@
+# Datadog Agent for OpenShift, managed by the Datadog Operator.
+#
+# Based on https://docs.datadoghq.com/containers/kubernetes/distributions/?tab=datadogoperator#openshift
+# Placeholders ${DD_CLUSTER_NAME} and ${DD_SITE} are filled in by scripts/deploy.sh.
+# The API key is read from the datadog-secret Secret (key: api-key) in this
+# namespace; it is never stored in this repository.
+apiVersion: datadoghq.com/v2alpha1
+kind: DatadogAgent
+metadata:
+  name: datadog
+  # Must be the namespace the Operator is installed in. The OperatorHub
+  # install provides the datadog-agent-scc ServiceAccount and SCC here.
+  namespace: openshift-operators
+spec:
+  global:
+    clusterName: ${DD_CLUSTER_NAME}
+    site: ${DD_SITE}
+    credentials:
+      apiSecret:
+        secretName: datadog-secret
+        keyName: api-key
+    kubelet:
+      # OpenShift kubelet certificates are not signed for the node IP.
+      tlsVerify: false
+    # Lets the Agent resolve ENC[k8s_secret@...] handles, used by the Postgres
+    # check annotation in app/infrastructure.yaml for the DBM password. The
+    # Secret lives in the Agent's own namespace: the Operator only manages
+    # RBAC for namespaces it watches.
+    secretBackend:
+      command: /readsecret_multiple_providers.sh
+      roles:
+        - namespace: openshift-operators
+          secrets:
+            - datadog-postgres
+
+  features:
+    apm:
+      enabled: true
+      # Traces arrive on the node's port 8126. Unix domain sockets would need
+      # hostPath volumes in app pods, which the restricted-v2 SCC forbids.
+      hostPortConfig:
+        enabled: true
+        hostPort: 8126
+      unixDomainSocketConfig:
+        enabled: false
+      # Single Step Instrumentation: the Cluster Agent's admission controller
+      # adds the Datadog tracer to matching pods when they start. No image
+      # rebuilds, no code changes. Pods opt in through the datadog-demo/tracer label.
+      instrumentation:
+        enabled: true
+        targets:
+          - name: datadog-demo-java
+            namespaceSelector:
+              matchNames: [datadog-demo]
+            podSelector:
+              matchLabels:
+                datadog-demo/tracer: java
+            ddTraceVersions:
+              java: default
+            ddTraceConfigs: &tracerConfig
+              - name: DD_TRACE_OTEL_ENABLED     # spans the services create in their own code become Datadog spans
+                value: "true"
+              - name: DD_PROFILING_ENABLED
+                value: "true"
+              - name: DD_RUNTIME_METRICS_ENABLED
+                value: "true"
+              - name: DD_LOGS_INJECTION
+                value: "true"
+              - name: DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED   # client spans keep the calling service's name
+                value: "true"
+          - name: datadog-demo-python
+            namespaceSelector:
+              matchNames: [datadog-demo]
+            podSelector:
+              matchLabels:
+                datadog-demo/tracer: python
+            ddTraceVersions:
+              python: default
+            ddTraceConfigs: *tracerConfig
+          - name: datadog-demo-nodejs
+            namespaceSelector:
+              matchNames: [datadog-demo]
+            podSelector:
+              matchLabels:
+                datadog-demo/tracer: nodejs
+            ddTraceVersions:
+              js: default
+            ddTraceConfigs: *tracerConfig
+
+    # OTLP intake on the node Agent. The recommendation service sends its logs
+    # this way (port 4317 on the node).
+    otlp:
+      receiver:
+        protocols:
+          grpc:
+            enabled: true
+            endpoint: 0.0.0.0:4317
+            hostPortConfig:
+              enabled: true
+              hostPort: 4317
+          http:
+            enabled: true
+            endpoint: 0.0.0.0:4318
+            hostPortConfig:
+              enabled: true
+              hostPort: 4318
+
+    dogstatsd:
+      hostPortConfig:
+        enabled: true
+        hostPort: 8125
+      unixDomainSocketConfig:
+        enabled: false
+    logCollection:
+      enabled: true
+      containerCollectAll: true
+    liveProcessCollection:
+      enabled: true
+    orchestratorExplorer:
+      enabled: true
+    eventCollection:
+      collectKubernetesEvents: true
+    clusterChecks:
+      enabled: true
+    admissionController:
+      enabled: true
+      mutateUnlabelled: false
+      # Injected tracers send to the node IP (matches the hostPort setup above).
+      agentCommunicationMode: hostip
+
+  override:
+    clusterAgent:
+      serviceAccountName: datadog-agent-scc
+      env:
+        # Security context for the tracer init containers that SSI adds, so
+        # instrumented pods still satisfy the restricted-v2 SCC.
+        - name: DD_ADMISSION_CONTROLLER_AUTO_INSTRUMENTATION_INIT_SECURITY_CONTEXT
+          value: '{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}'
+    nodeAgent:
+      serviceAccountName: datadog-agent-scc
+      hostNetwork: true
+      securityContext:
+        runAsUser: 0
+        # Needed for container log collection under SELinux.
+        seLinuxOptions:
+          level: s0
+          role: system_r
+          type: spc_t
+          user: system_u
+      env:
+        - name: DD_OTLP_CONFIG_LOGS_ENABLED
+          value: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/infra
+          operator: Exists
+          effect: NoSchedule

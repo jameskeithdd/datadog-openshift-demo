@@ -1,0 +1,18 @@
+# The OpenShift DatadogAgent, adapted for a plain Kubernetes test cluster:
+# no OpenShift SCC ServiceAccount or SELinux type. The Helm-installed Operator
+# runs in openshift-operators, same as the OperatorHub install.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../datadog
+patches:
+  - target:
+      kind: DatadogAgent
+      name: datadog
+    patch: |-
+      - op: remove
+        path: /spec/override/clusterAgent/serviceAccountName
+      - op: remove
+        path: /spec/override/nodeAgent/serviceAccountName
+      - op: remove
+        path: /spec/override/nodeAgent/securityContext/seLinuxOptions

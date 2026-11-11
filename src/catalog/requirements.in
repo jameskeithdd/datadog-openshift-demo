@@ -1,0 +1,6 @@
+grpcio
+grpcio-health-checking
+openfeature-sdk
+openfeature-provider-flagd
+psycopg[binary]
+psycopg-pool

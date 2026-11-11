@@ -1,0 +1,401 @@
+# Application services, traced by Datadog APM:
+#   * the datadog-demo/tracer label (every service except the load generator)
+#     selects a Datadog Single Step Instrumentation target in
+#     datadog/datadog-agent.yaml, which injects the Datadog tracer at pod start;
+#   * the upstream images ship with a different tracing library enabled at
+#     startup; the command/args/env overrides below switch it off;
+#   * tags.datadoghq.com/* labels set Unified Service Tagging (env/service/version).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+spec:
+  selector:
+    app.kubernetes.io/name: frontend
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app.kubernetes.io/name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: frontend
+        datadog-demo/tracer: nodejs
+        tags.datadoghq.com/env: datadog-demo
+        tags.datadoghq.com/service: frontend
+        tags.datadoghq.com/version: 3.1.0
+      annotations:
+        # Log source selects the matching Datadog log pipeline (otherwise it's
+        # guessed from the image name).
+        ad.datadoghq.com/frontend.logs: '[{"source": "nodejs", "service": "frontend"}]'
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: ghcr.io/open-telemetry/demo:3.1.0-frontend
+          # The image's default CMD preloads ./Instrumentation.js (its bundled
+          # tracing library). Preload the Datadog tracer registration instead.
+          args: ["--require=/etc/datadog-tracing/register-datadog-tracer.js", "server.js"]
+          env:
+            - name: PORT
+              value: "8080"
+            - name: HOSTNAME
+              value: 0.0.0.0
+            - name: AD_ADDR
+              value: ad:9555
+            - name: RECOMMENDATION_ADDR
+              value: recommendation:9001
+            - name: PRODUCT_CATALOG_ADDR
+              value: catalog:3550
+            # Not deployed in this bundle. The product routes build a currency
+            # client when they load (an empty address makes them fail); it is
+            # only called for non-USD prices, which the load generator never requests.
+            - name: CURRENCY_ADDR
+              value: currency:7001
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tracing-bridge
+              mountPath: /etc/datadog-tracing
+      volumes:
+        - name: tracing-bridge
+          configMap:
+            name: frontend-tracing-bridge
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ad
+  labels:
+    app.kubernetes.io/name: ad
+spec:
+  selector:
+    app.kubernetes.io/name: ad
+  ports:
+    - name: grpc
+      port: 9555
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ad
+  labels:
+    app.kubernetes.io/name: ad
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ad
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ad
+        datadog-demo/tracer: java
+        tags.datadoghq.com/env: datadog-demo
+        tags.datadoghq.com/service: ad
+        tags.datadoghq.com/version: 3.1.0
+      annotations:
+        # Log source selects the matching Datadog log pipeline (otherwise it's
+        # guessed from the image name).
+        ad.datadoghq.com/ad.logs: '[{"source": "java", "service": "ad"}]'
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ad
+          image: ghcr.io/open-telemetry/demo:3.1.0-ad
+          env:
+            # The image adds its bundled -javaagent here; keep only the heap setting
+            # so the Datadog Java tracer is the only agent.
+            - name: JAVA_TOOL_OPTIONS
+              value: -Xmx200m
+            - name: AD_PORT
+              value: "9555"
+            - name: FLAGD_HOST
+              value: flagd
+            - name: FLAGD_PORT
+              value: "8013"
+          ports:
+            - name: grpc
+              containerPort: 9555
+          readinessProbe:
+            grpc:
+              port: 9555
+            initialDelaySeconds: 10
+          resources:
+            # Headroom for the Datadog Java profiler on top of the 200m heap.
+            requests: {cpu: 100m, memory: 400Mi}
+            limits: {memory: 768Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendation
+  labels:
+    app.kubernetes.io/name: recommendation
+spec:
+  selector:
+    app.kubernetes.io/name: recommendation
+  ports:
+    - name: grpc
+      port: 9001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommendation
+  labels:
+    app.kubernetes.io/name: recommendation
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: recommendation
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: recommendation
+        datadog-demo/tracer: python
+        tags.datadoghq.com/env: datadog-demo
+        tags.datadoghq.com/service: recommendation
+        tags.datadoghq.com/version: 3.1.0
+      annotations:
+        # Log source selects the matching Datadog log pipeline (otherwise it's
+        # guessed from the image name).
+        ad.datadoghq.com/recommendation.logs: '[{"source": "python", "service": "recommendation"}]'
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: recommendation
+          image: ghcr.io/open-telemetry/demo:3.1.0-recommendation
+          # The image's entrypoint wraps the script in its bundled tracing launcher,
+          # which also raised the "main" logger to INFO. Run the script directly
+          # and set that level here, otherwise most of its logs are dropped.
+          command:
+            - /venv/bin/python
+            - -c
+            - import logging, runpy; logging.getLogger("main").setLevel(logging.INFO); runpy.run_path("recommendation_server.py", run_name="__main__")
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef: {fieldPath: status.hostIP}
+            - name: RECOMMENDATION_PORT
+              value: "9001"
+            - name: PRODUCT_CATALOG_ADDR
+              value: catalog:3550
+            - name: FLAGD_HOST
+              value: flagd
+            - name: FLAGD_PORT
+              value: "8013"
+            # This service ships its logs over OTLP only (hard-wired in its code).
+            # These standard variables point it at the Datadog Agent on the node.
+            - name: OTEL_SERVICE_NAME
+              value: recommendation
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://$(HOST_IP):4317
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment.name=datadog-demo,service.version=3.1.0
+          ports:
+            - name: grpc
+              containerPort: 9001
+          readinessProbe:
+            grpc:
+              port: 9001
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 500Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  labels:
+    app.kubernetes.io/name: catalog
+spec:
+  selector:
+    app.kubernetes.io/name: catalog
+  ports:
+    - name: grpc
+      port: 3550
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  labels:
+    app.kubernetes.io/name: catalog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog
+        datadog-demo/tracer: python
+        tags.datadoghq.com/env: datadog-demo
+        tags.datadoghq.com/service: catalog
+        tags.datadoghq.com/version: 1.0.0
+      annotations:
+        # Log source selects the matching Datadog log pipeline (otherwise it's
+        # guessed from the image name).
+        ad.datadoghq.com/catalog.logs: '[{"source": "python", "service": "catalog"}]'
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: catalog
+          # Built from src/catalog by .github/workflows/catalog-image.yaml.
+          image: catalog
+          env:
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres-credentials, key: app-password}
+            - name: DB_CONNECTION_STRING
+              value: host=postgresql port=5432 dbname=shop user=shop password=$(APP_PASSWORD)
+            - name: FLAGD_HOST
+              value: flagd
+            - name: FLAGD_PORT
+              value: "8013"
+            # Tags each SQL statement with the calling trace, linking APM spans
+            # to query samples in Database Monitoring.
+            - name: DD_DBM_PROPAGATION_MODE
+              value: full
+          ports:
+            - name: grpc
+              containerPort: 3550
+          readinessProbe:
+            grpc:
+              port: 3550
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: load-generator
+  labels:
+    app.kubernetes.io/name: load-generator
+spec:
+  selector:
+    app.kubernetes.io/name: load-generator
+  ports:
+    - name: http
+      port: 8089
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  labels:
+    app.kubernetes.io/name: load-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: load-generator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: load-generator
+        # No datadog-demo/tracer label: the injected Python tracer deadlocks
+        # Locust's gevent runtime at startup, so traces begin at the frontend.
+        tags.datadoghq.com/env: datadog-demo
+        tags.datadoghq.com/service: load-generator
+        tags.datadoghq.com/version: 2.43.3
+      annotations:
+        # Log source selects the matching Datadog log pipeline (otherwise it's
+        # guessed from the image name).
+        ad.datadoghq.com/load-generator.logs: '[{"source": "python", "service": "load-generator"}]'
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: load-generator
+          # Stock Locust image running the locustfile from the load-generator ConfigMap.
+          image: docker.io/locustio/locust:2.43.3
+          # The image's home directory is private to its built-in user; under
+          # OpenShift's arbitrary UID, run from a writable directory instead.
+          workingDir: /tmp
+          args:
+            - --locustfile=/etc/locust/locustfile.py
+            - --host=http://frontend:8080
+            - --users=$(LOCUST_USERS)
+            - --spawn-rate=1
+            - --autostart
+          env:
+            - name: LOCUST_USERS
+              value: "10"
+            - name: HOME
+              value: /tmp
+          ports:
+            - name: http
+              containerPort: 8089
+          readinessProbe:
+            tcpSocket:
+              port: 8089
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: locustfile
+              mountPath: /etc/locust
+      volumes:
+        - name: locustfile
+          configMap:
+            name: load-generator

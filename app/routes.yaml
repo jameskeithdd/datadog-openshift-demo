@@ -1,0 +1,20 @@
+# OpenShift Route for the storefront (applied by scripts/deploy.sh).
+# The storefront is partial in this demo (browse, recommendations, ads).
+#
+# The load generator's web UI is deliberately not exposed: it has no
+# authentication. Reach it with:
+#   oc port-forward -n datadog-demo svc/load-generator 8089
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: frontend
+  namespace: datadog-demo
+spec:
+  to:
+    kind: Service
+    name: frontend
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
